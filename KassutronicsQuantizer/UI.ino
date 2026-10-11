@@ -1,6 +1,8 @@
 /* UI.ino - Interface/menu structure
  * Modified 2026-09-27: note flash on the scale display, startup LED animation
  * Modified 2026-09-29: channel B mirror toggle (key 11 in the qmode menu)
+ * Modified 2026-10-03: scale editing accounts for the MIDI root note
+ * Modified 2026-10-11: startup animation ~1s, speed set by startupsteptime
  *  
  * This file handles the user interface at high level. 
  * In particular, it dynamically calculates what LEDs 
@@ -46,6 +48,9 @@
       ((blinkoctave[-octaves]) ? (0x8000 >> KEY_DOWN) : 0) : \
       0
   
+// Time each LED is lit in the startup animation, in ~1ms units. 12 LEDs, so 83 gives ~1s total
+const byte startupsteptime = 83;
+
 /* getDisplayState is executed at ~1kHz, but not time-critical (if the call takes more than 1ms it will skip the
  * next call, but that is acceptable for IO operations).
  * IMPORTANT: this code may be interrupted at any time by the Core code (processChannel and processCV).
@@ -57,11 +62,11 @@ unsigned int getDisplayState(boolean shift) {
   static unsigned int counter = 0;
   counter--;
 
-  // Startup animation: light each note LED in turn (key 0 to 11), ~167ms each, ~2s total
+  // Startup animation: light each note LED in turn (key 0 to 11), ~1s total
   static unsigned int startupcounter = 0;
-  if (startupcounter < 12 * 167) {
+  if (startupcounter < 12 * startupsteptime) {
     startupcounter++;
-    return 0x8000 >> ((startupcounter - 1) / 167);
+    return 0x8000 >> ((startupcounter - 1) / startupsteptime);
   }
 
   // Keep track of autosavecounter
@@ -184,9 +189,10 @@ void keyDownEvent(byte key, boolean shift) {
       if (shift == false) {
         if (key<12) {
           // Toggle one bit in the scale
-          byte rotation = state.rotatesemitones + rotatesemitonesCV;
-          byte unrotatedkey = mod12(key + 24 - rotation); // rotation can be at most 24
           cli();
+          byte rotation = state.rotatesemitones + rotatesemitonesCV + rotatesemitonesMIDI;
+          byte unrotatedkey = key + 36 - rotation; // rotation can be at most 36
+          unrotatedkey = mod12(unrotatedkey);
           state.scale ^= (0x8000 >> unrotatedkey);
           updateRotation();
           sei();
