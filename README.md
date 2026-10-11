@@ -25,12 +25,12 @@ In the original firmware the menu setting was ignored in this mode.
 In the normal scale display, when a channel outputs a new note, that note's LED goes dark for ~80ms. This shows which notes are being played. If both channels play the same note, it still flashes.
 
 ### Startup animation
-At power-up the note LEDs light one after another, ~2 seconds in total. This also makes it easy to confirm that new firmware was flashed.
+At power-up the note LEDs light one after another, ~1 second in total. This also makes it easy to confirm that new firmware was flashed.
 
 ### MIDI out
 The quantized notes are sent as MIDI on the TX pin of the serial header J2 (pin 5). Channel A plays on MIDI channel 1, channel B on channel 2.
 
-- 0V is MIDI note 36 (C2). Notes above MIDI note 127 are not sent.
+- 0V is MIDI note 36 (C2), and each volt is one octave. Outputs below -3V would be under MIDI note 0 and are not sent.
 - A note starts when the gate turns on and stops when it turns off. Velocity is always 100.
 - With legato on, the new note is sent before the old one is released, so mono synths slide instead of retriggering.
 
@@ -42,7 +42,31 @@ Wiring to a MIDI jack:
 | 5 (TX) | 220Ω to DIN pin 5 (TRS type A: tip) |
 | 1 (GND) | DIN pin 2 (TRS: sleeve) |
 
-Leave DTR (pin 6) unconnected. MIDI out uses the UART, so it can't be enabled together with `DEBUGPRINT`. Disconnect the MIDI cable before uploading through J2. To turn MIDI out off, comment out `#define MIDI_OUT` in `KassutronicsQuantizer.ino`.
+Leave DTR (pin 6) unconnected. MIDI uses the UART, so it can't be enabled together with `DEBUGPRINT`. Disconnect the MIDI cable before uploading through J2. To turn MIDI out off, comment out `#define MIDI_OUT` in `KassutronicsQuantizer.ino`.
+
+### MIDI in: root note and octave
+MIDI notes received on the RX pin of the serial header J2 (pin 4) set the root note and the octave. The scale is rotated by the note played: C leaves the scale as entered, D moves it up two semitones, and so on. Enter the scale with C as the root and the MIDI note then picks the key.
+
+- The octave of the note transposes both outputs in whole octaves, centered on middle C. Notes 60–71 (middle C up to the B above it) give no shift, 48–59 shift one octave down, 72–83 one octave up, and so on. Middle C is MIDI note 60; some gear labels it C3, some C4.
+- The octave shift does not sound when the MIDI note arrives. Each channel picks it up at its next note: the next trigger, or with nothing in TRIG, the next time the input moves to a different note.
+- Any MIDI channel works.
+- Root and octave stay until the next note on. Note offs are ignored.
+- The MIDI root adds to the rotation set in the menu and by CV. The scale display shows the result.
+- The MIDI octave adds to the transpose set in the menu and by CV. If the result is outside the output range, the output holds its last note.
+- Root and octave are not saved. After power-up the root is C with no octave shift until a note arrives.
+
+MIDI in needs an optocoupler. The usual 6N138 circuit:
+
+| 6N138 pin | Connect to |
+|---|---|
+| 2 (anode) | 220Ω to DIN pin 4 (TRS type A: ring) |
+| 3 (cathode) | DIN pin 5 (TRS type A: tip) |
+| 5 (GND) | J2 pin 1 (GND) |
+| 6 (output) | J2 pin 4 (RX), and 470Ω to +5V |
+| 7 | 4.7kΩ to GND |
+| 8 (VCC) | J2 pin 3 (+5V) |
+
+Put a 1N4148 across pins 2 and 3, cathode to pin 2. Leave DIN pin 2 unconnected. Disconnect the MIDI input before uploading through J2. To turn MIDI in off, comment out `#define MIDI_IN` in `KassutronicsQuantizer.ino`.
 
 ### Channel B mirror
 Channel B can quantize channel A's input, so it works as a second voice. Press Shift+8 (quantize mode menu), then key 11 to toggle. LED 11 is lit when mirroring is on. The setting is saved.

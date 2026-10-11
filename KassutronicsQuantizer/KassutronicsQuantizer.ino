@@ -1,5 +1,6 @@
 // Modified 2026-09-27 (fork): CV gate length, note flash, startup animation. See Core.ino/UI.ino
 // Modified 2026-09-29 (fork): MIDI note output on the serial header. See Midi.ino
+// Modified 2026-10-03 (fork): MIDI input sets the root note and octave. See Midi.ino
 
 // **** Debug functionality ****
 /* SLOW slows down the ADC by a factor 2, giving more time for core processing. */
@@ -17,6 +18,10 @@
 /* MIDI_OUT sends the quantized notes as MIDI on the UART TX pin (serial header J2 pin 5).
    Channel A plays on MIDI channel 1, channel B on channel 2. Cannot be used together with DEBUGPRINT. */
 #define MIDI_OUT
+
+/* MIDI_IN receives MIDI notes on the UART RX pin (serial header J2 pin 4). A note on sets the root note,
+   by rotating the scale, and its octave transposes the output (middle C octave = no shift). Needs an optocoupler input circuit. Cannot be used together with DEBUGPRINT. */
+#define MIDI_IN
 
 // Set to true to reset the EEPROM to default values on startup
 #define EE_RESET false
@@ -37,7 +42,7 @@ void setup() {
   setupPWM();
   setupADC();
   setupGPIO();
-  #ifdef MIDI_OUT
+  #if defined(MIDI_OUT) || defined(MIDI_IN)
   setupMidi();
   #endif
   

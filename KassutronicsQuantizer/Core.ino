@@ -1,6 +1,8 @@
 /* Core.ino - I/O processing etc
  * Modified 2026-09-27: CV gate length now offsets the menu setting, note flash state
  * Modified 2026-09-29: MIDI note output hooks at the gate on/off points, channel B mirror
+ * Modified 2026-10-03: MIDI input root note added to the scale rotation, MIDI octave added to transpose
+ * Modified 2026-10-11: default trigger delay 3
  *  
  * This file mainly contains the processChannel and processCV functions,
  * which process the ADC data for the channel inputs and CV inputs, respectively,
@@ -67,8 +69,9 @@ struct PersistentState {
   bool mirrorB;
   byte reserved[2];
 };
+// Defaults, used when the EEPROM is empty (e.g. after flashing). Trigger delay 3 (~3ms) lets the pitch CV settle before it is sampled
 volatile PersistentState state = {
-  0b1010110101010000, 0, 0, 0, 0, 0, 0, false, qmnearest, 0, {cvoff, cvoff}, false, {0,0}
+  0b1010110101010000, 0, 0, 0, 0, 0, 0, false, qmnearest, 3, {cvoff, cvoff}, false, {0,0}
 };
 
 // Non-persistent global state variables
@@ -79,6 +82,8 @@ volatile signed char keyboardoctaves = 0;
 volatile signed char keyboardsemitones = 0;
 volatile byte keyboardtriggered = 0;
 volatile byte rotatesemitonesCV = 0;
+volatile byte rotatesemitonesMIDI = 0; // Root note from MIDI in (0-11), see Midi.ino
+volatile signed char transposesemitonesMIDI = 0; // Octave shift from MIDI in, in semitones. Each channel picks it up at its next note
 volatile signed char transposesemitonesCV[2] = {0,0};
 volatile signed char offsetsemitonesCV[2] = {0,0};
 volatile int gatelength;
@@ -103,7 +108,8 @@ const unsigned int autosavetime = 10000;
 
 // Must be called whenever rotation or scale changes
 void updateRotation() {
-  byte rotation = mod12(state.rotatesemitones + rotatesemitonesCV);
+  byte rotation = state.rotatesemitones + rotatesemitonesCV + rotatesemitonesMIDI;
+  rotation = mod12(rotation);
   unsigned int myscale = state.scale;
   if (rotation > 0) {
     myscale = ((myscale >> rotation) | (myscale << (12 - rotation))) & 0xFFF0;
@@ -147,6 +153,7 @@ void processChannel(byte i, int newadcval) {
   static bool freerunning[2] = {true, true};
   static int triggercounter[2] = {0, 0};
   static byte triggerdelay[2] = {0, 0};
+  static signed char miditranspose[2] = {0, 0}; // MIDI octave shift in use, see transposesemitonesMIDI
 
   // Channel B mirror: B quantizes channel A's input (toggled in the qmode menu)
   static int mirrorhyst = 0;     // A's input (with hysteresis) at its last update
@@ -203,17 +210,25 @@ void processChannel(byte i, int newadcval) {
     // Skip invalid candidates (e.g. 255), which would overrun mod12table
     scaleNote = (candidate < 128) ? mod12(candidate + 8) : 255;
 
-    candidate += state.transposesemitones + transposesemitonesCV[i] - 1;
+    candidate += state.transposesemitones + transposesemitonesCV[i] + miditranspose[i] - 1;
     if (i==1) {
       candidate += state.transposeBsemitones;
     }
+    // A new note: a trigger, or a different note in free running mode
+    bool newnote;
+    if (follow) {
+      // Also update on B's own changes (e.g. transpose B) when A is freerunning
+      newnote = mirrortrig || (freerunning[0] && (candidate != outval[i]));
+    } else {
+      newnote = (freerunning[i] && (candidate != outval[i])) || (triggerdelay[i] == 1);
+    }
+    if (newnote) {
+      // The MIDI octave only takes effect together with a new note, never on its own
+      candidate += transposesemitonesMIDI - miditranspose[i];
+      miditranspose[i] = transposesemitonesMIDI;
+    }
     if (candidate < 128) {
-      if (follow) {
-        // Also update on B's own changes (e.g. transpose B) when A is freerunning
-        trig = mirrortrig || (freerunning[0] && (candidate != outval[i]));
-      } else {
-        trig = (freerunning[i] && (candidate != outval[i])) || (triggerdelay[i] == 1);
-      }
+      trig = newnote;
     } else if (triggerdelay[i] == 1) {
       triggerdelay[i] = 0;
     }
