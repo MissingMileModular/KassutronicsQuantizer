@@ -30,7 +30,8 @@ At power-up the note LEDs light one after another, ~1 second in total. This also
 ### MIDI out
 The quantized notes are sent as MIDI on the TX pin of the serial header J2 (pin 5). Channel A plays on MIDI channel 1, channel B on channel 2.
 
-- 0V is MIDI note 36 (C2), and each volt is one octave. Outputs below -3V would be under MIDI note 0 and are not sent.
+- 0V is MIDI note 36, and each volt is one octave. The top of the output range (+5.3V) is note 100. Outputs below -3V would be under MIDI note 0 and are not sent.
+- The status byte is sent with every message (no running status), so a receiver that is connected later picks up at the next note.
 - A note starts when the gate turns on and stops when it turns off. Velocity is always 100.
 - With legato on, the new note is sent before the old one is released, so mono synths slide instead of retriggering.
 
@@ -41,6 +42,8 @@ Wiring to a MIDI jack:
 | 3 (+5V) | 220Ω to DIN pin 4 (TRS type A: ring) |
 | 5 (TX) | 220Ω to DIN pin 5 (TRS type A: tip) |
 | 1 (GND) | DIN pin 2 (TRS: sleeve) |
+
+A schematic of the MIDI out and MIDI in circuits is in `KassutronicsQuantizer/midi_circuit/midi_circuit.kicad_sch` (KiCad).
 
 Leave DTR (pin 6) unconnected. MIDI uses the UART, so it can't be enabled together with `DEBUGPRINT`. Disconnect the MIDI cable before uploading through J2. To turn MIDI out off, comment out `#define MIDI_OUT` in `KassutronicsQuantizer.ino`.
 
@@ -59,14 +62,17 @@ MIDI in needs an optocoupler. The usual 6N138 circuit:
 
 | 6N138 pin | Connect to |
 |---|---|
-| 2 (anode) | 220Ω to DIN pin 4 (TRS type A: ring) |
+| 2 (anode) | 220Ω to DIN pin 4 (TRS type A: ring). 270Ω also works |
 | 3 (cathode) | DIN pin 5 (TRS type A: tip) |
 | 5 (GND) | J2 pin 1 (GND) |
 | 6 (output) | J2 pin 4 (RX), and 470Ω to +5V |
 | 7 | 4.7kΩ to GND |
 | 8 (VCC) | J2 pin 3 (+5V) |
 
-Put a 1N4148 across pins 2 and 3, cathode to pin 2. Leave DIN pin 2 unconnected. Disconnect the MIDI input before uploading through J2. To turn MIDI in off, comment out `#define MIDI_IN` in `KassutronicsQuantizer.ino`.
+Put a 1N4148 across pins 2 and 3, cathode to pin 2. Leave DIN pin 2 unconnected. If tip and ring are swapped, nothing is received. Disconnect the MIDI input before uploading through J2. To turn MIDI in off, comment out `#define MIDI_IN` in `KassutronicsQuantizer.ino`.
+
+### Default trigger delay
+The trigger delay (Shift+9) now defaults to 3, about 3ms, instead of 0. With 0 the input is sampled about 0.2ms after the trigger, which is before the pitch CV of some sequencers has settled, so each trigger picks up the previous note.
 
 ### Channel B mirror
 Channel B can quantize channel A's input, so it works as a second voice. Press Shift+8 (quantize mode menu), then key 11 to toggle. LED 11 is lit when mirroring is on. The setting is saved.
@@ -106,3 +112,5 @@ The sketch builds with the board set to **Arduino Uno**. When programming throug
 2. Use **Sketch → Upload Using Programmer** (Ctrl+Shift+U).
 
 A plain **Upload** (Ctrl+U) writes the firmware to the Uno itself, not to the quantizer. In the verbose upload log, the avrdude command should contain `-cstk500v1` and `-b19200`. If it contains `-carduino`, the firmware went to the Uno.
+
+Flashing this way erases the whole chip. Unless the EESAVE fuse is set, that includes the saved settings and scales, so the module starts from the defaults afterwards.
